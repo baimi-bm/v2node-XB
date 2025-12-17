@@ -291,31 +291,17 @@ install_v2node() {
         is_zip="false"
     fi
 
-    if [[ "$is_zip" == "true" ]]; then
+    # 优先下载裸二进制（不再依赖 zip）
+    url_bin="https://raw.githubusercontent.com/${REPO#github.com/}/${url_version}/build_assets/v2node-linux-${arch}"
+    curl -fsSL "$url_bin" -o /usr/local/v2node/v2node
+    if [[ $? -ne 0 || ! -s /usr/local/v2node/v2node ]]; then
+        echo -e "${yellow}raw 二进制下载失败，尝试 release zip...${plain}"
         curl -fsSLo /usr/local/v2node/v2node-linux.zip "$url"
-        if [[ $? -ne 0 ]]; then
-            is_zip="false"
-        fi
-    fi
-
-    if [[ "$is_zip" == "false" ]]; then
-        url="https://raw.githubusercontent.com/${REPO#github.com/}/${url_version}/build_assets/v2node-linux-${arch}"
-        curl -fsSL "$url" -o /usr/local/v2node/v2node
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v2node 失败，请确保你的服务器能够访问 ${REPO}${plain}"
-            exit 1
-        fi
-    fi
-
-    if [[ "$is_zip" == "true" ]]; then
-        unzip v2node-linux.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${yellow}压缩包解压失败，尝试使用分支原始二进制...${plain}"
-            is_zip="false"
-            url="https://raw.githubusercontent.com/${REPO#github.com/}/${url_version}/build_assets/v2node-linux-${arch}"
-            curl -fsSL "$url" -o /usr/local/v2node/v2node || { echo -e "${red}下载 v2node 失败，请检查版本是否存在${plain}"; exit 1; }
+        if [[ $? -eq 0 ]]; then
+            unzip v2node-linux.zip && rm -f v2node-linux.zip
         else
-            rm v2node-linux.zip -f
+            echo -e "${red}下载 v2node 失败，请检查版本是否存在或网络是否可达 ${REPO}${plain}"
+            exit 1
         fi
     fi
     chmod +x v2node
