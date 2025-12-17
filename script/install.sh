@@ -280,28 +280,30 @@ install_v2node() {
             echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"
         fi
         url_version="${last_version//\//-}"
-        url="https://${REPO}/releases/download/${url_version}/v2node-linux-${arch}.zip"
     else
     last_version=$version_param
         url_version="${last_version//\//-}"
-        url="https://${REPO}/releases/download/${url_version}/v2node-linux-${arch}.zip"
     fi
 
-    if [[ "$last_version" == "$DEFAULT_BRANCH" ]]; then
-        is_zip="false"
-    fi
+    # 下载优先级：release 裸二进制 > release zip > 分支 raw
+    url_release_bin="https://${REPO}/releases/download/${url_version}/v2node-linux-${arch}"
+    url_release_zip="https://${REPO}/releases/download/${url_version}/v2node-linux-${arch}.zip"
+    url_raw_bin="https://raw.githubusercontent.com/${REPO#github.com/}/${url_version}/build_assets/v2node-linux-${arch}"
 
-    # 优先下载裸二进制（不再依赖 zip）
-    url_bin="https://raw.githubusercontent.com/${REPO#github.com/}/${url_version}/build_assets/v2node-linux-${arch}"
-    curl -fsSL "$url_bin" -o /usr/local/v2node/v2node
+    # 尝试 release 裸二进制
+    curl -fsSL "$url_release_bin" -o /usr/local/v2node/v2node
     if [[ $? -ne 0 || ! -s /usr/local/v2node/v2node ]]; then
-        echo -e "${yellow}raw 二进制下载失败，尝试 release zip...${plain}"
-        curl -fsSLo /usr/local/v2node/v2node-linux.zip "$url"
+        # 尝试 release zip
+        curl -fsSLo /usr/local/v2node/v2node-linux.zip "$url_release_zip"
         if [[ $? -eq 0 ]]; then
             unzip v2node-linux.zip && rm -f v2node-linux.zip
         else
-            echo -e "${red}下载 v2node 失败，请检查版本是否存在或网络是否可达 ${REPO}${plain}"
-            exit 1
+            # 尝试分支 raw
+            echo -e "${yellow}release 资源未找到，尝试分支原始二进制...${plain}"
+            curl -fsSL "$url_raw_bin" -o /usr/local/v2node/v2node || {
+                echo -e "${red}下载 v2node 失败，请检查版本是否存在或网络是否可达 ${REPO}${plain}"
+                exit 1
+            }
         fi
     fi
     chmod +x v2node
