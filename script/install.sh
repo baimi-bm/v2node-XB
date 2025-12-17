@@ -72,13 +72,13 @@ parse_args() {
 arch=$(uname -m)
 
 if [[ $arch == "x86_64" || $arch == "x64" || $arch == "amd64" ]]; then
-    arch="64"
+    arch="amd64"
 elif [[ $arch == "aarch64" || $arch == "arm64" ]]; then
-    arch="arm64-v8a"
-elif [[ $arch == "s390x" ]]; then
-    arch="s390x"
+    arch="arm64"
+elif echo "$arch" | grep -qE "armv7|armv7l"; then
+    arch="armv7"
 else
-    arch="64"
+    arch="amd64"
     echo -e "${red}检测架构失败，使用默认架构: ${arch}${plain}"
 fi
 
@@ -262,6 +262,8 @@ EOF
 
 install_v2node() {
     local version_param="$1"
+    local is_zip="true"
+    set +e
     if [[ -e /usr/local/v2node/ ]]; then
         rm -rf /usr/local/v2node/
     fi
@@ -270,7 +272,7 @@ install_v2node() {
     cd /usr/local/v2node/
 
     if  [[ -z "$version_param" ]] ; then
-        last_version=$(curl -Ls "https://api.github.com/repos/${REPO#github.com/}/releases/latest" | grep '"tag_name":' | sed -E 's/.*\"([^\\\"]+)\".*/\\1/')
+        last_version=$(curl -Ls "https://api.github.com/repos/${REPO#github.com/}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
         if [[ -z "$last_version" ]]; then
             last_version="${DEFAULT_BRANCH}"
             echo -e "${yellow}未检测到发行版，使用默认分支：${last_version}${plain}"
@@ -278,27 +280,54 @@ install_v2node() {
             echo -e "${green}检测到最新版本：${last_version}，开始安装...${plain}"
         fi
         url="https://${REPO}/releases/download/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
+    else
+    last_version=$version_param
+        url="https://${REPO}/releases/download/${last_version}/v2node-linux-${arch}.zip"
+    fi
+
+    if [[ "$last_version" == "$DEFAULT_BRANCH" ]]; then
+        is_zip="false"
+    fi
+
+    if [[ "$is_zip" == "true" ]]; then
+        curl -fsSLo /usr/local/v2node/v2node-linux.zip "$url"
+        if [[ $? -ne 0 ]]; then
+            is_zip="false"
+        fi
+    fi
+
+    if [[ "$is_zip" == "false" ]]; then
+        url="https://raw.githubusercontent.com/${REPO#github.com/}/${last_version}/build_assets/v2node-linux-${arch}"
+        curl -fsSL "$url" -o /usr/local/v2node/v2node
         if [[ $? -ne 0 ]]; then
             echo -e "${red}下载 v2node 失败，请确保你的服务器能够访问 ${REPO}${plain}"
             exit 1
         fi
-    else
-    last_version=$version_param
-        url="https://${REPO}/releases/download/${last_version}/v2node-linux-${arch}.zip"
-        curl -sL "$url" | pv -s 30M -W -N "下载进度" > /usr/local/v2node/v2node-linux.zip
-        if [[ $? -ne 0 ]]; then
-            echo -e "${red}下载 v2node $1 失败，请确保此版本存在${plain}"
-            exit 1
-        fi
     fi
 
-    unzip v2node-linux.zip
-    rm v2node-linux.zip -f
+    if [[ "$is_zip" == "true" ]]; then
+        unzip v2node-linux.zip
+        if [[ $? -ne 0 ]]; then
+            echo -e "${yellow}压缩包解压失败，尝试使用分支原始二进制...${plain}"
+            is_zip="false"
+            url="https://raw.githubusercontent.com/${REPO#github.com/}/${last_version}/build_assets/v2node-linux-${arch}"
+            curl -fsSL "$url" -o /usr/local/v2node/v2node || { echo -e "${red}下载 v2node 失败，请检查版本是否存在${plain}"; exit 1; }
+        else
+            rm v2node-linux.zip -f
+        fi
+    fi
     chmod +x v2node
     mkdir /etc/v2node/ -p
-    cp geoip.dat /etc/v2node/
-    cp geosite.dat /etc/v2node/
+    if [[ -f geoip.dat ]]; then
+        cp geoip.dat /etc/v2node/
+    else
+        curl -fsSL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat" -o /etc/v2node/geoip.dat
+    fi
+    if [[ -f geosite.dat ]]; then
+        cp geosite.dat /etc/v2node/
+    else
+        curl -fsSL "https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat" -o /etc/v2node/geosite.dat
+    fi
     if [[ x"${release}" == x"alpine" ]]; then
         rm /etc/init.d/v2node -f
         cat <<EOF > /etc/init.d/v2node
